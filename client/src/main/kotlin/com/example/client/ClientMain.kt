@@ -3,10 +3,17 @@ package com.example.client
 import com.example.SampleService
 import io.ktor.client.HttpClient
 import io.ktor.http.encodedPath
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.measureTime
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.rpc.krpc.ktor.client.KtorRpcClient
 import kotlinx.rpc.krpc.ktor.client.installKrpc
 import kotlinx.rpc.krpc.ktor.client.rpc
@@ -35,27 +42,12 @@ private val rpcClient: KtorRpcClient = httpClient.rpc {
 private val sampleRpc = rpcClient.withService<SampleService>()
 
 suspend fun main(): Unit = coroutineScope {
-  launch { collectIntEvery10Seconds() }
-  launch {
-    delay(1000) //give collector a head start
-    emitIntEvery1Second()
+  val job = async {
+    sampleRpc.doUncancellableWork()
   }
-}
-
-private suspend fun collectIntEvery10Seconds() {
-  sampleRpc.receiveInt().collect { int ->
-    delay(10_000)
+  delay(1000) // let coroutine to connect to server
+  val duration = measureTime {
+    job.cancelAndJoin()
   }
-}
-
-private suspend fun emitIntEvery1Second() {
-  var i = 0
-  while (true) {
-    val payload = i++
-    val duration = measureTime {
-      sampleRpc.sendInt(payload)
-    }
-    println("Emission of item $payload took $duration")
-    delay(1000)
-  }
+  println("Cancelling job took $duration")
 }
